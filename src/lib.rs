@@ -1,71 +1,86 @@
 #[derive(Default, Debug)]
-struct Node {
-    children: Vec<Node>,
-    key: char,
-    value: Option<String>,
+struct Node<K, V> {
+    children: Vec<Node<K, V>>,
+    key: K,
+    value: Option<V>,
     is_terminal: bool,
 }
 
-impl Node {
-    fn new(value: char) -> Self {
+impl<K, V> Node<K, V> {
+    fn new(key: K) -> Self {
         Self {
-            key: value,
-            ..Default::default()
+            children: Default::default(),
+            key,
+            value: Default::default(),
+            is_terminal: false,
         }
     }
 }
 
 #[derive(Default, Debug)]
-pub struct Trie {
-    root: Node,
+pub struct Trie<K, V> {
+    root: Node<K, V>,
 }
 
-impl Trie {
-    pub fn insert(&mut self, string: &str) {
+impl<K, V> Trie<K, V>
+where
+    K: Ord + Clone,
+    V: AsRef<[K]>,
+{
+    pub fn insert(&mut self, value: V) {
         let mut node = &mut self.root;
 
-        for ch in string.chars() {
-            match node.children.binary_search_by(|n| n.key.cmp(&ch)) {
+        for ch in value.as_ref() {
+            match node.children.binary_search_by(|n| n.key.cmp(ch)) {
                 Ok(i) => {
                     node = &mut node.children[i];
                 }
                 Err(i) => {
-                    node.children.insert(i, Node::new(ch));
+                    node.children.insert(i, Node::new(ch.clone()));
                     node = &mut node.children[i];
                 }
             };
         }
 
         node.is_terminal = true;
-        node.value.replace(string.to_string());
+        node.value.replace(value);
     }
 
-    pub fn has(&self, string: &str) -> bool {
-        let mut is_contained = false;
-
+    pub fn has(&self, value: V) -> bool {
         let mut node = &self.root;
-        for ch in string.chars() {
-            match node.children.binary_search_by(|n| n.key.cmp(&ch)) {
-                Ok(i) => {
-                    is_contained = true;
 
+        for ch in value.as_ref() {
+            match node.children.binary_search_by(|n| n.key.cmp(ch)) {
+                Ok(i) => {
                     node = &node.children[i];
                 }
                 Err(_) => return false,
             };
         }
 
-        if !node.is_terminal {
-            return false;
-        }
-
-        is_contained
+        return node.is_terminal;
     }
 
-    pub fn get(&self, string: &str) -> Option<String> {
+    pub fn has_prefix(&self, value: V) -> bool {
         let mut node = &self.root;
-        for ch in string.chars() {
-            match node.children.binary_search_by(|n| n.key.cmp(&ch)) {
+
+        for ch in value.as_ref() {
+            match node.children.binary_search_by(|n| n.key.cmp(ch)) {
+                Ok(i) => {
+                    node = &node.children[i];
+                }
+                Err(_) => return false,
+            };
+        }
+
+        return true;
+    }
+
+    pub fn get(&self, value: V) -> Option<&V> {
+        let mut node = &self.root;
+
+        for ch in value.as_ref() {
+            match node.children.binary_search_by(|n| n.key.cmp(ch)) {
                 Ok(i) => {
                     node = &node.children[i];
                 }
@@ -77,7 +92,7 @@ impl Trie {
             return None;
         }
 
-        node.value.clone()
+        node.value.as_ref()
     }
 }
 
@@ -116,10 +131,21 @@ mod tests {
         let mut trie = Trie::default();
         trie.insert("camera");
         trie.insert("cámara");
+        trie.insert("🫡");
 
         assert!(trie.has("camera"));
         assert!(trie.has("cámara"));
         assert!(!trie.has("cámera"));
+        assert!(trie.has("🫡"));
+    }
+
+    #[test]
+    fn handles_duplicated() {
+        let mut trie = Trie::default();
+        trie.insert("camera");
+        trie.insert("camera");
+
+        assert!(trie.has("camera"));
     }
 
     #[test]
@@ -127,7 +153,20 @@ mod tests {
         let mut trie = Trie::default();
         trie.insert("maker");
 
-        assert!(!trie.has("make"));
+        assert!(!trie.has("ma"));
+        assert!(trie.has_prefix("ma"));
+    }
+
+    #[test]
+    fn handles_large_data_set() {
+        let words = include_str!("../benches/words.txt");
+        let mut trie = Trie::default();
+
+        for x in words.lines() {
+            trie.insert(x);
+        }
+
+        assert!(trie.has("matter"));
     }
 
     #[test]
@@ -135,7 +174,7 @@ mod tests {
         let mut trie = Trie::default();
         trie.insert("handler");
 
-        assert_eq!(Some("handler".to_string()), trie.get("handler"));
+        assert_eq!(Some(&"handler"), trie.get("handler"));
     }
 
     #[test]
@@ -144,7 +183,7 @@ mod tests {
         trie.insert("tea");
         trie.insert("test");
 
-        assert_eq!(Some("tea".to_string()), trie.get("tea"));
-        assert_eq!(Some("test".to_string()), trie.get("test"));
+        assert_eq!(Some(&"tea"), trie.get("tea"));
+        assert_eq!(Some(&"test"), trie.get("test"));
     }
 }
